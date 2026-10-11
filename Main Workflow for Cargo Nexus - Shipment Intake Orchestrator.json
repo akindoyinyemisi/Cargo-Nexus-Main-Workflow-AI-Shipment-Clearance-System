@@ -1,0 +1,1209 @@
+{
+  "name": "Cargo Nexus - Shipment Intake Orchestrator",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "cargo-nexus-shipment-upload",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1152,
+        80
+      ],
+      "id": "594e4f2a-7da9-426f-805e-5d2bed8744ea",
+      "name": "Shipment Upload",
+      "webhookId": "374552c2-4d81-4efa-b7ee-3332cc4f7e96"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3757572a-b57c-4a3c-baef-b5a889c22742",
+              "name": "shipment_id",
+              "value": "={{ $json.body?.shipment_id || 'CNX-2026-000451' }}",
+              "type": "string"
+            },
+            {
+              "id": "a7814fab-57e8-4d68-95c3-28ef7011bab4",
+              "name": "source",
+              "value": "={{ $json.body?.source || 'PowerShell Upload' }}",
+              "type": "string"
+            },
+            {
+              "id": "8c2a0670-0e48-4c6b-b854-84909319af5b",
+              "name": "document_type",
+              "value": "={{ $json.body?.document_type || 'BILL OF LADING' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        -1024,
+        -288
+      ],
+      "id": "a89818fe-5443-454a-b84d-f46289e43379",
+      "name": "Normalize Shipment Metadata"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "binaryPropertyName": "file",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        -832,
+        -288
+      ],
+      "id": "3c4f036e-ca28-4f16-aa95-440688beb046",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nreturn items.map(item => {\n  let raw = item.json.shipment_data;\n\n  // Remove Markdown code fences if Gemini added them\n  raw = raw\n    .replace(/```json/gi, '')\n    .replace(/```/g, '')\n    .trim();\n\n  let data;\n\n  try {\n    data = JSON.parse(raw);\n  } catch (error) {\n    return {\n      json: {\n        parse_success: false,\n        error: error.message,\n        raw_shipment_data: raw\n      }\n    };\n  }\n\n  // Normalize container number\n  if (data.container_number) {\n    data.container_number = data.container_number\n      .toUpperCase()\n      .replace(/[^A-Z0-9]/g, '');\n  }\n\n  return {\n    json: {\n      ...data,\n      parse_success: true\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -80,
+        -16
+      ],
+      "id": "3c2767cf-21ec-4ab0-bc1c-7db7b5159cd7",
+      "name": "Parse &Normalize Shipment Data"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "dfb023c8-15d5-46c5-b000-71005262a1a9",
+              "name": "shipment_data",
+              "value": "={{ $json.content.parts[0].text }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        -336,
+        -304
+      ],
+      "id": "dfff5d9f-2c45-4180-8f25-dc0375213cb4",
+      "name": "Prepare Al Shipment Data"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "models/gemini-3-flash-preview"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=You are the document intelligence engine for Cargo Nexus.\n\nAnalyze the following extracted shipping document text:\n\n{{ $json.text }}\n\nExtract the shipment information and return ONLY valid JSON using this exact structure:\n\n{\n  \"document_type\": \"\",\n  \"bill_of_lading_number\": \"\",\n  \"booking_number\": \"\",\n  \"container_number\": \"\",\n  \"seal_number\": \"\",\n  \"shipper\": \"\",\n  \"consignee\": \"\",\n  \"carrier\": \"\",\n  \"vessel_name\": \"\",\n  \"voyage_number\": \"\",\n  \"port_of_loading\": \"\",\n  \"port_of_discharge\": \"\",\n  \"final_destination\": \"\",\n  \"goods_description\": \"\",\n  \"package_count\": \"\",\n  \"gross_weight\": \"\",\n  \"shipping_date\": \"\"\n}\n\nRules:\n- Use only information found in the document.\n- Do not invent missing information.\n- If a field is not present, return null.\n- Preserve container numbers, seal numbers, and document numbers exactly as written.\n- Return JSON only. Do not include explanations or markdown."
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        -640,
+        -16
+      ],
+      "id": "6fd11e8e-6387-4270-94d9-bf48b5486225",
+      "name": "Al Document Extraction-Gemini",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "XpSpSK4G5kVYlrjG",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "shipments",
+          "mode": "list",
+          "cachedResultName": "shipments"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "document_type": "={{ $json.document_type }}",
+            "bill_of_lading_number": "={{ $json.bill_of_lading_number }}",
+            "booking_number": "={{ $json.booking_number }}",
+            "container_number": "={{ $json.container_number }}",
+            "seal_number": "={{ $json.seal_number }}",
+            "shipper": "={{ $json.shipper }}",
+            "consignee": "={{ $json.consignee }}",
+            "carrier": "={{ $json.carrier }}",
+            "vessel_name": "={{ $json.vessel_name }}",
+            "voyage_number": "={{ $json.voyage_number }}",
+            "port_of_loading": "={{ $json.port_of_loading }}",
+            "port_of_discharge": "={{ $json.port_of_discharge }}",
+            "final_destination": "={{ $json.final_destination }}",
+            "goods_description": "={{ $json.goods_description }}",
+            "package_count": "={{ $json.package_count }}",
+            "gross_weight": "={{ $json.gross_weight }}",
+            "shipping_date": "={{ $json.shipping_date }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "document_type",
+              "displayName": "document_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "bill_of_lading_number",
+              "displayName": "bill_of_lading_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "booking_number",
+              "displayName": "booking_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "container_number",
+              "displayName": "container_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "seal_number",
+              "displayName": "seal_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "shipper",
+              "displayName": "shipper",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "consignee",
+              "displayName": "consignee",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "carrier",
+              "displayName": "carrier",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "vessel_name",
+              "displayName": "vessel_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "voyage_number",
+              "displayName": "voyage_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "port_of_loading",
+              "displayName": "port_of_loading",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "port_of_discharge",
+              "displayName": "port_of_discharge",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "final_destination",
+              "displayName": "final_destination",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "goods_description",
+              "displayName": "goods_description",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "package_count",
+              "displayName": "package_count",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "gross_weight",
+              "displayName": "gross_weight",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "measurement",
+              "displayName": "measurement",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "shipping_date",
+              "displayName": "shipping_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        144,
+        -256
+      ],
+      "id": "bc9633db-d4ba-470c-a2f9-ee81993f8ca1",
+      "name": "Save Shipment to PostgreSQL",
+      "credentials": {
+        "postgres": {
+          "id": "3cWERgSG7AP5hhWm",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "shipments",
+          "mode": "list",
+          "cachedResultName": "shipments"
+        },
+        "where": {
+          "values": [
+            {
+              "column": "container_number",
+              "value": "={{ $json.container_number }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        352,
+        -272
+      ],
+      "id": "06470519-d1f8-464e-8cdd-ea0825e15a9b",
+      "name": "Get Shipment Documents from PostgreSQL",
+      "credentials": {
+        "postgres": {
+          "id": "3cWERgSG7AP5hhWm",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "607b6143-a576-4241-8f1b-3517cab4d884",
+              "leftValue": "={{ $json.comparison_status }}",
+              "rightValue": "MATCH",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            },
+            {
+              "id": "ac6eabb0-ce76-45bc-ad85-5059c4d8782b",
+              "leftValue": "={{ $json.documents_compared.length }}",
+              "rightValue": 3,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        960,
+        -96
+      ],
+      "id": "41455efd-f2f0-4531-a6aa-834f3279cb80",
+      "name": "Check Document Comparison Status"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "692b7262-5180-4957-8c26-98d96c2853c6",
+              "name": "readiness_status",
+              "value": "DOCUMENTS VERIFIED",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1296,
+        -128
+      ],
+      "id": "618412f7-cebe-48ed-ad3b-735c2b703a89",
+      "name": "Set Documents Verified Status"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "1c159ef1-bd04-4b73-bbb4-61e57576d8d2",
+              "name": "readiness_status",
+              "value": "HUMAN REVIEW REQUIRED",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1136,
+        48
+      ],
+      "id": "5972f4ac-5474-40b1-b942-8840e022cc3b",
+      "name": "Set Human Review Required Status"
+    },
+    {
+      "parameters": {
+        "operation": "sendAndWait",
+        "sendTo": "cargonexus2026@gmail.com",
+        "subject": "=Cargo Nexus – Shipment Document Review Required",
+        "message": "=Hello Cargo Nexus Operations Team,\n\nA shipment requires human review because a discrepancy was detected during automated document verification.\n\nContainer Number: {{ $json.container_number }}\n\nReadiness Status: {{ $json.readiness_status }}\n\nPlease review the shipment information and discrepancies, then approve or reject the shipment for further processing.\n\nCargo Nexus\nAutomated Shipment Documentation & Port Release Engine",
+        "approvalOptions": {
+          "values": {
+            "approvalType": "double",
+            "approveLabel": "Approve Shipment",
+            "disapproveLabel": "Reject Shipment"
+          }
+        },
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1152,
+        288
+      ],
+      "id": "7dfff422-3994-42eb-9168-7d8090570a6e",
+      "name": "Human Review & Approval-Gmail",
+      "webhookId": "1f3f17d0-d710-457d-b1bb-98f1d0bc6a5c",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "KPyRbr7FLOqjYCcR",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "1592d50c-e764-4144-a56f-54924874a28b",
+              "leftValue": "={{ $json.data.approved }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1376,
+        272
+      ],
+      "id": "240cee9a-df3f-46d3-8193-4f7d5ee6f133",
+      "name": "Check Human Review Decision"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e095d358-03dd-48d9-a1b7-95c4764078e4",
+              "name": "readiness_status",
+              "value": "HUMAN REVIEW APPROVED",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1472,
+        -64
+      ],
+      "id": "9364fc65-9e35-4095-a65f-4024cbef153d",
+      "name": "Set Human Approved Status"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "75b3c13b-f1e8-48dd-b046-9ed69b45a0e2",
+              "name": "readiness_status",
+              "value": "HUMAN REVIEW REJECTED",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1600,
+        288
+      ],
+      "id": "2b54ea45-80aa-407d-8e44-0282d9746e18",
+      "name": "Set Human Review Rejected Status"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE public.shipments\nSET readiness_status = 'HUMAN REVIEW REJECTED'\nWHERE container_number = $1\nRETURNING *;",
+        "options": {
+          "queryReplacement": "={{ $('Compare Document & Detect Discrepancies').item.json.container_number }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        1856,
+        304
+      ],
+      "id": "e35268fa-2fd9-4fa4-a520-dc92e901c2b0",
+      "name": "Updated Rejected Shipment in PostgreSQL",
+      "credentials": {
+        "postgres": {
+          "id": "3cWERgSG7AP5hhWm",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE public.shipments\nSET readiness_status = 'HUMAN REVIEW APPROVED'\nWHERE container_number = $1\nRETURNING *;",
+        "options": {
+          "queryReplacement": "={{ $('Compare Document & Detect Discrepancies').item.json.container_number }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        1696,
+        -64
+      ],
+      "id": "d75e578b-5484-47fa-951d-0c08e4ac3fcd",
+      "name": "Updated Approved Shipment in PostgreSQL",
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "id": "3cWERgSG7AP5hhWm",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "cargonexus2026@gmail.com",
+        "subject": "Cargo Nexus | Shipment Approved Successfully",
+        "message": "=<h2>🚢 Cargo Nexus | Shipment Approval Notification</h2>  <p>Dear Cargo Nexus Team,</p>  <p>We are pleased to inform you that the shipment below has successfully completed the human review process.</p>  <p><strong>Container Number:</strong> {{ $('Compare Document & Detect Discrepancies').item.json.container_number }}</p>  <p><strong>Approval Status:</strong> HUMAN REVIEW APPROVED</p>  <p><strong>Database Status:</strong> Updated Successfully</p>  <p>The shipment has been approved and its status has been updated in the Cargo Nexus database.</p>  <p>Best regards,<br> <strong>Cargo Nexus Automation System</strong></p>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1920,
+        -64
+      ],
+      "id": "3d4fc19f-b1dc-49c0-88ac-4aedb4ba4ed2",
+      "name": "Send Shipment Approval Notification",
+      "webhookId": "3c15dda5-063f-48f2-9688-d83bebf8405d",
+      "executeOnce": true,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "KPyRbr7FLOqjYCcR",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "cargonexus2026@gmail.com",
+        "subject": "Cargo Nexus | Shipment Rejected",
+        "message": "=<h2>🚢 Cargo Nexus | Shipment Rejection Notification</h2>  <p>Dear Cargo Nexus Team,</p>  <p>This is to inform you that the following shipment has been rejected following human review.</p>  <p><strong>Container Number:</strong> {{ $('Compare Document & Detect Discrepancies').item.json.container_number }}</p>  <p><strong>Review Status:</strong> HUMAN REVIEW REJECTED</p>  <p><strong>Database Status:</strong> Updated Successfully</p>  <p>The shipment requires further attention. Please review the discrepancies and take the necessary corrective actions before resubmission.</p>  <p>Best regards,<br> <strong>Cargo Nexus Automation System</strong></p>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2048,
+        288
+      ],
+      "id": "e54c7aca-750b-477a-ba58-46399b72f73f",
+      "name": "Send Shipment Rejection Notification",
+      "webhookId": "3ae740da-2fd2-4733-9d33-4f80e0b6f38f",
+      "executeOnce": true,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "KPyRbr7FLOqjYCcR",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "ly4OpROVuB5hXCXS",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/ly4OpROVuB5hXCXS",
+          "cachedResultName": "Cargo Nexus-Document"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        1008,
+        -240
+      ],
+      "id": "14ce1b94-8d0f-4d13-9aa9-884c2af13aec",
+      "name": "Call 'Cargo Nexus-Document'",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE public.shipments\nSET readiness_status = 'DOCUMENTS VERIFIED'\nWHERE container_number = $1\nRETURNING *;",
+        "options": {
+          "queryReplacement": "={{ $('Compare Document & Detect Discrepancies').item.json.container_number }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        1264,
+        -384
+      ],
+      "id": "0f5b1100-023a-4da9-91bd-e24158a86491",
+      "name": "Update Verified Shipment in PostgreSQL",
+      "credentials": {
+        "postgres": {
+          "id": "3cWERgSG7AP5hhWm",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "cargonexus2026@gmail.com",
+        "subject": "Cargo Nexus | Shipment Documents Verified Successfully",
+        "message": "=<h2>🚢 Cargo Nexus | Shipment Verification Notification</h2>  <p>Dear Cargo Nexus Team,</p>  <p>We are pleased to inform you that the shipping documents have been successfully verified.</p>  <p><strong>Container Number:</strong> {{ $('Set Documents Verified Status').item.json.container_number }}</p>  <p><strong>Verification Status:</strong> DOCUMENTS VERIFIED</p>  <p><strong>Database Status:</strong> Updated Successfully</p>  <p>The shipment documents have passed the automated verification process, and the status has been updated in the Cargo Nexus database.</p>  <p>Best regards,<br> Cargo Nexus Automation Team</p>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1488,
+        -464
+      ],
+      "id": "81b9cc5c-ab1a-4a75-be87-9ef09984a6c6",
+      "name": "Send a message",
+      "webhookId": "597decbe-fa0f-4eed-a545-b61f7a7736b3",
+      "executeOnce": true,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "KPyRbr7FLOqjYCcR",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        608,
+        80
+      ],
+      "id": "cdef5e54-a99c-4d09-8396-3d7ce8e4685b",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "XpSpSK4G5kVYlrjG",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are Cargo Nexus, an AI-powered shipment documentation verification assistant.\n\nAnalyze the shipment comparison results provided below.\n\nSHIPMENT DATA:\n{{ JSON.stringify($json) }}\n\nGenerate a professional Shipment Readiness Report containing:\n\n1. Container Number\n2. Documents Received\n3. Missing Required Documents\n4. Document Discrepancies\n5. Weight and Seal Number Verification\n6. Document Comparison Status\n7. Shipment Readiness Status\n8. Recommended Next Actions\n\nRequired shipping documents:\n- Bill of Lading\n- Commercial Invoice\n- Packing List\n- Form M\n- Customs Declaration\n- Delivery Order\n- Container Manifest\n\nIMPORTANT RULES:\n- Identify missing documents and conflicting information.\n- If any required document is missing, mark the shipment as NOT READY FOR CLEARANCE.\n- If discrepancies exist, mark the shipment as HUMAN REVIEW REQUIRED.\n- Mark the shipment as READY FOR CLEARANCE only when all seven required documents are present, all comparisons pass, and any required external clearance checks are confirmed.\n- Do not invent missing information or claim customs clearance has been granted.\n- If maritime or port information is unavailable, state that verification is pending.\n\nWrite the report clearly and professionally.",
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        496,
+        -64
+      ],
+      "id": "b3265ea6-42b6-4b30-95d9-ca168287c5c6",
+      "name": "AL Shipment Readiness Report"
+    },
+    {
+      "parameters": {
+        "sendTo": "cargonexus2026@gmail.com",
+        "subject": "Cargo Nexus | AI Shipment Readiness Report",
+        "message": "={{ '<div style=\"font-family:Arial,sans-serif;line-height:1.7;color:#222;\">' +\n'<h2 style=\"color:#1565c0;\">🚢 CARGO NEXUS | SHIPMENT READINESS REPORT</h2>' +\n'<p>Hello Operations Team,</p>' +\n'<p>The automated shipment documentation assessment has been completed.</p>' +\n'<p><strong>Container Number:</strong> ' +\n$('Compare Document & Detect Discrepancies').first().json.container_number +\n'</p><hr>' +\n'<div style=\"white-space:pre-wrap;\">' +\n$json.text\n.replace(/&/g, '&amp;')\n.replace(/</g, '&lt;')\n.replace(/>/g, '&gt;')\n.replace(/\\*\\*(.*?)\\*\\*/g, '<strong>$1</strong>')\n.replace(/^#{1,6}\\s+/gm, '')\n.replace(/\\n/g, '<br>') +\n'</div><hr>' +\n'<p>Please review the findings and complete any outstanding actions before port clearance.</p>' +\n'<p>Regards,<br><strong>Cargo Nexus Automated Shipment Documentation System</strong></p>' +\n'</div>' }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        800,
+        176
+      ],
+      "id": "4e3b7f60-ebde-4b3f-bd12-927f4865bd0f",
+      "name": "Send a message1",
+      "webhookId": "fa277a34-6636-4e67-90fb-95bd04db1aa0",
+      "executeOnce": true,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "KPyRbr7FLOqjYCcR",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://freightapis.dev/api/ports/CNSHA",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        352,
+        -544
+      ],
+      "id": "01447fa6-a612-470a-a083-157407f35d43",
+      "name": "HTTP Request",
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "bSFtYHGXUPnnVtdu",
+          "name": "Bearer Auth account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get all shipment documents returned from PostgreSQL\nconst allDocs = $input.all().map(item => item.json);\n\n// Keep only the latest record for each document type\nconst uniqueByType = new Map();\n\nfor (const doc of allDocs) {\n  const type = String(doc.document_type || '')\n    .trim()\n    .toUpperCase();\n\n  if (!type) continue;\n\n  const existing = uniqueByType.get(type);\n\n  if (\n    !existing ||\n    Number(doc.id || 0) > Number(existing.id || 0)\n  ) {\n    uniqueByType.set(type, doc);\n  }\n}\n\nconst docs = Array.from(uniqueByType.values());\n\nconst documentTypes = docs.map(doc => doc.document_type);\n\n// Find Bill of Lading\nconst billOfLading = docs.find(\n  doc =>\n    String(doc.document_type || '')\n      .trim()\n      .toUpperCase() === 'BILL OF LADING'\n);\n\n// Find Container Manifest\nconst containerManifest = docs.find(\n  doc =>\n    String(doc.document_type || '')\n      .trim()\n      .toUpperCase() === 'CONTAINER MANIFEST'\n);\n\nconst discrepancies = [];\n\n// Check required documents\nif (!billOfLading) {\n  discrepancies.push({\n    field: 'document_type',\n    issue: 'Missing BILL OF LADING'\n  });\n}\n\nif (!containerManifest) {\n  discrepancies.push({\n    field: 'document_type',\n    issue: 'Missing CONTAINER MANIFEST'\n  });\n}\n\n// Fields to compare\nconst fieldsToCompare = [\n  'bill_of_lading_number',\n  'container_number',\n  'seal_number',\n  'shipper',\n  'consignee',\n  'carrier',\n  'vessel_name',\n  'voyage_number',\n  'port_of_loading',\n  'port_of_discharge',\n  'goods_description',\n  'package_count',\n  'gross_weight'\n];\n\n// Normalize general values\nfunction normalize(value) {\n  if (\n    value === null ||\n    value === undefined ||\n    value === ''\n  ) {\n    return null;\n  }\n\n  return String(value)\n    .trim()\n    .toUpperCase()\n    .replace(/\\s+/g, ' ');\n}\n\n// Normalize company names\n// Ignore address details and common company suffixes\nfunction normalizeCompany(value) {\n  return String(value)\n    .toUpperCase()\n    .split(',')[0]\n    .replace(/\\b(LIMITED|LTD|CO|COMPANY)\\b/g, '')\n    .replace(/[^A-Z0-9]/g, '')\n    .trim();\n}\n\n// Compare documents\nif (billOfLading && containerManifest) {\n\n  for (const field of fieldsToCompare) {\n\n    const bolValue = normalize(billOfLading[field]);\n\n    const manifestValue = normalize(\n      containerManifest[field]\n    );\n\n    // Both values missing\n    if (\n      bolValue === null &&\n      manifestValue === null\n    ) {\n      continue;\n    }\n\n    // One value missing\n    if (\n      bolValue === null ||\n      manifestValue === null\n    ) {\n      discrepancies.push({\n        field,\n        issue: 'Missing value in one document',\n        bill_of_lading:\n          billOfLading[field] ?? null,\n        container_manifest:\n          containerManifest[field] ?? null\n      });\n\n      continue;\n    }\n\n    // Special comparison for company names\n    const companyField =\n      field === 'shipper' ||\n      field === 'consignee';\n\n    const valuesMatch = companyField\n      ? normalizeCompany(bolValue) ===\n        normalizeCompany(manifestValue)\n      : bolValue === manifestValue;\n\n    // Record genuine discrepancies\n    if (!valuesMatch) {\n      discrepancies.push({\n        field,\n        issue: 'Value mismatch',\n        bill_of_lading: billOfLading[field],\n        container_manifest:\n          containerManifest[field]\n      });\n    }\n  }\n}\n\n// Return comparison results\nreturn [\n  {\n    json: {\n      container_number:\n        billOfLading?.container_number ||\n        containerManifest?.container_number ||\n        null,\n\n      documents_compared: documentTypes,\n\n      database_records_found: allDocs.length,\n\n      unique_documents_found: docs.length,\n\n      duplicate_records_ignored:\n        allDocs.length - docs.length,\n\n      required_documents_present: Boolean(\n        billOfLading && containerManifest\n      ),\n\n      discrepancy_count: discrepancies.length,\n\n      discrepancies,\n\n      comparison_status:\n        discrepancies.length === 0\n          ? 'MATCH'\n          : 'DISCREPANCY FOUND'\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        512,
+        -272
+      ],
+      "id": "cd117055-3f72-49a2-8492-481f68f6f40d",
+      "name": "Compare Document & Detect Discrepancies"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Shipment Upload": {
+      "main": [
+        [
+          {
+            "node": "Normalize Shipment Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Shipment Metadata": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Al Document Extraction-Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Al Shipment Data": {
+      "main": [
+        [
+          {
+            "node": "Parse &Normalize Shipment Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Al Document Extraction-Gemini": {
+      "main": [
+        [
+          {
+            "node": "Prepare Al Shipment Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse &Normalize Shipment Data": {
+      "main": [
+        [
+          {
+            "node": "Save Shipment to PostgreSQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Shipment to PostgreSQL": {
+      "main": [
+        [
+          {
+            "node": "Get Shipment Documents from PostgreSQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Shipment Documents from PostgreSQL": {
+      "main": [
+        [
+          {
+            "node": "Compare Document & Detect Discrepancies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Document Comparison Status": {
+      "main": [
+        [
+          {
+            "node": "Set Documents Verified Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set Human Review Required Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Human Review Required Status": {
+      "main": [
+        [
+          {
+            "node": "Human Review & Approval-Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Human Review & Approval-Gmail": {
+      "main": [
+        [
+          {
+            "node": "Check Human Review Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Human Review Decision": {
+      "main": [
+        [
+          {
+            "node": "Set Human Approved Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set Human Review Rejected Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Human Review Rejected Status": {
+      "main": [
+        [
+          {
+            "node": "Updated Rejected Shipment in PostgreSQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Updated Rejected Shipment in PostgreSQL": {
+      "main": [
+        [
+          {
+            "node": "Send Shipment Rejection Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Human Approved Status": {
+      "main": [
+        [
+          {
+            "node": "Updated Approved Shipment in PostgreSQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Updated Approved Shipment in PostgreSQL": {
+      "main": [
+        [
+          {
+            "node": "Send Shipment Approval Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call 'Cargo Nexus-Document'": {
+      "main": [
+        [
+          {
+            "node": "Check Document Comparison Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Documents Verified Status": {
+      "main": [
+        [
+          {
+            "node": "Update Verified Shipment in PostgreSQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Verified Shipment in PostgreSQL": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AL Shipment Readiness Report",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AL Shipment Readiness Report": {
+      "main": [
+        [
+          {
+            "node": "Send a message1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Compare Document & Detect Discrepancies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compare Document & Detect Discrepancies": {
+      "main": [
+        [
+          {
+            "node": "AL Shipment Readiness Report",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Call 'Cargo Nexus-Document'",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "e4ffca3f-08e4-41c5-a634-9705a267f890",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "de10a0559b20f662b08c78d648ec63ce9cfdf4a21ad17b38e770e6e7dd7fac31"
+  },
+  "nodeGroups": [],
+  "id": "Q5omFHO7IalbNqSE",
+  "tags": []
+}

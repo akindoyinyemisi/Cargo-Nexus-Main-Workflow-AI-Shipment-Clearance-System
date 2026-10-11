@@ -1,0 +1,57 @@
+{
+  "name": "Cargo Nexus-Document",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "b5e66024-2068-4a4f-b67b-3f4ff013b3cf",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "const requiredDocuments = [\n  \"BILL OF LADING\",\n  \"COMMERCIAL INVOICE\",\n  \"PACKING LIST\",\n  \"FORM M\",\n  \"CUSTOMS DECLARATION\",\n  \"DELIVERY ORDER\",\n  \"CONTAINER MANIFEST\"\n];\n\nreturn $input.all().map(item => {\n  const shipment = item.json;\n\n  const receivedDocuments = [\n    ...new Set(\n      (shipment.documents_compared || [])\n        .map(doc => String(doc).trim().toUpperCase())\n    )\n  ];\n\n  const missingDocuments = requiredDocuments.filter(\n    doc => !receivedDocuments.includes(doc)\n  );\n\n  const discrepancies = shipment.discrepancies || [];\n\n  const ready =\n    missingDocuments.length === 0 &&\n    discrepancies.length === 0;\n\n  return {\n    json: {\n      ...shipment,\n      required_documents: requiredDocuments,\n      received_documents: receivedDocuments,\n      missing_documents: missingDocuments,\n      missing_document_count: missingDocuments.length,\n      discrepancy_count: discrepancies.length,\n      validation_status: ready\n        ? \"DOCUMENTS VERIFIED\"\n        : \"HUMAN REVIEW REQUIRED\",\n      ready_for_document_review: ready\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ],
+      "id": "8bed0623-c570-4356-8656-6c35212dbda8",
+      "name": "Validate Shipment Document"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Validate Shipment Document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "8f00fb51-6846-49e8-9464-a1384a0d48a7",
+  "meta": {
+    "instanceId": "de10a0559b20f662b08c78d648ec63ce9cfdf4a21ad17b38e770e6e7dd7fac31"
+  },
+  "nodeGroups": [],
+  "id": "ly4OpROVuB5hXCXS",
+  "tags": []
+}
